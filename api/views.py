@@ -1,7 +1,9 @@
 from rest_framework import viewsets, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum, Count, Max
+from django.db.models.deletion import ProtectedError
 from datetime import datetime
 
 from .models import Destination, Company, InShipment, OutShipment
@@ -94,16 +96,22 @@ class InShipmentViewSet(viewsets.ModelViewSet):
         return Response(stats)
     
     def perform_destroy(self, instance):
-        instance.delete()
+        try:
+            instance.delete()
+        except ProtectedError:
+            # Cannot delete an InShipment that is referenced by one or more OutShipments
+            raise ValidationError({
+                "detail": "لا يمكن حذف الشحنة الواردة لأنها مرتبطة بشحنات صادرة. احذف الشحنات الصادرة المرتبطة أولاً أو ألغِ العملية."
+            })
 
 
 class OutShipmentViewSet(viewsets.ModelViewSet):
     """ViewSet for OutShipment model (Outbound Shipments)"""
-    queryset = OutShipment.objects.prefetch_related('in_shipments').all()
+    queryset = OutShipment.objects.select_related('in_shipment').all()
     serializer_class = OutShipmentSerializer
     filterset_class = OutShipmentFilter
 
-    search_fields = ["company_name", "sub_bill_number", "bill_number", "destination", "contract_status", "in_shipments__bill_number"]
+    search_fields = ["company_name", "sub_bill_number", "bill_number", "destination", "contract_status", "in_shipment__bill_number"]
     ordering_fields = ["export_date", "disbursement_date", "arrival_date", "payment_fees"]
 
     @action(detail=False, methods=['get'])
@@ -132,8 +140,11 @@ class OutShipmentViewSet(viewsets.ModelViewSet):
 
         return Response(stats)
 
-    def perform_destroy(self, instance):
-        in_shipment_ids = list(instance.in_shipments.values_list('id', flat=True))
-        instance.delete()
-        InShipment.objects.filter(id__in=in_shipment_ids).update(export=False)
+    def update(self, request, *args, **kwargs):
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    def partial_update(self, request, *args, **kwargs):
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)

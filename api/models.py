@@ -61,6 +61,7 @@ class BaseShipment(models.Model):
 class InShipment(BaseShipment):
     """Model for Inbound Shipments"""
     export = models.BooleanField(default=False, help_text="Export status (False=in inventory, True=exported)")
+    exported_count = models.PositiveIntegerField(default=0, help_text="عدد الطرود المُصدَّرة حتى الآن")
     
     class Meta:
         db_table = 'in_shipments'
@@ -73,11 +74,12 @@ class InShipment(BaseShipment):
 
 
 class OutShipment(BaseShipment):
-    """Model for Outbound Shipments linked to multiple inbound shipments"""
-    in_shipments = models.ManyToManyField(
+    """Model for Outbound Shipments linked to a single inbound shipment (partial exports supported)"""
+    in_shipment = models.ForeignKey(
         InShipment,
         related_name='out_shipments',
-        help_text="Inbound shipments associated with this outbound record"
+        on_delete=models.PROTECT,
+        help_text="الشحنة الواردة المرتبطة بهذه العملية"
     )
     export_date = models.DateField(blank=True, null=True, help_text="تاريخ التصدير")
 

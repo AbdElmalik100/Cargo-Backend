@@ -62,15 +62,17 @@ def handle_out_shipment_save(sender, instance, created, **kwargs):
 
 
 @receiver(pre_delete, sender=OutShipment)
-def cache_related_in_shipments(sender, instance, **kwargs):
-    instance._in_shipment_ids = list(instance.in_shipments.values_list('id', flat=True))
+def cache_related_in_shipment(sender, instance, **kwargs):
+    # Store FK id to avoid accessing relations after deletion
+    try:
+        instance._in_shipment_id = instance.in_shipment_id
+    except Exception:
+        instance._in_shipment_id = None
 
 
 @receiver(post_delete, sender=OutShipment)
 def handle_out_shipment_delete(sender, instance, **kwargs):
-    related_ids = getattr(instance, "_in_shipment_ids", [])
-    if related_ids:
-        InShipment.objects.filter(id__in=related_ids).update(export=False)
+    # Deletion of out shipments is disabled in API; keep broadcast only for safety
     broadcast_event("out_shipment", "deleted", instance.id)
 
 

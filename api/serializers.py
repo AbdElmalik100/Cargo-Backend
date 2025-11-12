@@ -44,83 +44,45 @@ class InShipmentSerializer(BaseShipmentSerializer):
 
 
 class OutShipmentSerializer(BaseShipmentSerializer):
-    in_shipments = InShipmentSerializer(many=True, read_only=True)
-    in_shipment_ids = serializers.PrimaryKeyRelatedField(
-        queryset=InShipment.objects.all(),
-        many=True,
-        write_only=True,
-        source='in_shipments'
+    in_shipment = InShipmentSerializer(read_only=True)
+    in_shipment_id = serializers.PrimaryKeyRelatedField(
+        queryset=InShipment.objects.all(), write_only=True, source='in_shipment'
     )
 
     class Meta:
         model = OutShipment
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at', 'status', 'in_shipments']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'status', 'in_shipment']
 
-    def validate_in_shipment_ids(self, value):
-        """Validate that inbound shipments are available unless already linked to current instance"""
-        if not value:
-            raise serializers.ValidationError("يجب اختيار شحنة واحدة على الأقل.")
-
-        instance = getattr(self, 'instance', None)
-        allowed_ids = set()
-        if instance is not None:
-            allowed_ids = set(instance.in_shipments.values_list('id', flat=True))
-
-        exported_shipments = [s for s in value if s.export and s.id not in allowed_ids]
-        if exported_shipments:
-            exported_numbers = [s.sub_bill_number for s in exported_shipments]
-            raise serializers.ValidationError(
-                f"الشحنات التالية تم تصديرها بالفعل: {', '.join(exported_numbers)}"
-            )
-
-        return value
+    def validate(self, attrs):
+        in_shipment = attrs.get('in_shipment') or getattr(self.instance, 'in_shipment', None)
+        package_count = attrs.get('package_count') or getattr(self.instance, 'package_count', None)
+        if in_shipment is None:
+            raise serializers.ValidationError({"in_shipment_id": "يجب اختيار شحنة واردة."})
+        if package_count is None or package_count <= 0:
+            raise serializers.ValidationError({"package_count": "عدد الطرود مطلوب ويجب أن يكون أكبر من صفر."})
+        remaining = max(0, int(in_shipment.package_count) - int(in_shipment.exported_count or 0))
+        if package_count > remaining:
+            raise serializers.ValidationError({
+                "package_count": f"عدد الطرود المطلوب تصديره ({package_count}) يتجاوز المتبقي ({remaining})."
+            })
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data):
-        in_shipments = validated_data.pop('in_shipments', [])
-        if not in_shipments:
-            raise serializers.ValidationError("يجب اختيار شحنة واحدة على الأقل.")
-
+        in_shipment = validated_data['in_shipment']
         export_date = validated_data.get('export_date') or date.today()
         validated_data['export_date'] = export_date
 
-        # Create the outshipment
-        out_shipment = OutShipment(**validated_data)
-        out_shipment.save()
-        
-        # Link the inshipments
-        out_shipment.in_shipments.set(in_shipments)
-        
-        # Mark all inshipments as exported
-        InShipment.objects.filter(id__in=[s.id for s in in_shipments]).update(export=True)
+        out_shipment = OutShipment.objects.create(**validated_data)
+
+        # Update inbound shipment exported_count and export flag
+        in_shipment.exported_count = int(in_shipment.exported_count or 0) + int(out_shipment.package_count or 0)
+        in_shipment.export = in_shipment.exported_count >= in_shipment.package_count
+        in_shipment.save(update_fields=['exported_count', 'export', 'updated_at'])
 
         return out_shipment
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        in_shipments = validated_data.pop('in_shipments', None)
-        export_date = validated_data.get('export_date') or instance.export_date or date.today()
-
-        # Update other fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.export_date = export_date
-        instance.save()
-
-        # Update inshipments if provided
-        if in_shipments is not None:
-            # Unmark old inshipments as exported (except ones remaining selected later)
-            old_shipment_ids = list(instance.in_shipments.values_list('id', flat=True))
-            instance.in_shipments.set(in_shipments)
-            new_ids = [s.id for s in in_shipments]
-            removed_ids = set(old_shipment_ids) - set(new_ids)
-            if removed_ids:
-                InShipment.objects.filter(id__in=removed_ids).update(export=False)
-            InShipment.objects.filter(id__in=new_ids).update(export=True)
-        else:
-            # Ensure exports remain True for existing links
-            InShipment.objects.filter(id__in=instance.in_shipments.values_list('id', flat=True)).update(export=True)
-
-        return instance
-
+        raise serializers.ValidationError("لا يمكن تعديل الشحنة الصادرة بعد إنشائها.")

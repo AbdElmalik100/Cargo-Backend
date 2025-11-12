@@ -15,7 +15,7 @@ class InShipmentFilter(django_filters.FilterSet):
 
 class OutShipmentFilter(django_filters.FilterSet):
     """FilterSet for OutShipment model"""
-    bill_number = django_filters.CharFilter(field_name='in_shipments__bill_number', lookup_expr='iexact')
+    bill_number = django_filters.CharFilter(field_name='in_shipment__bill_number', lookup_expr='iexact')
     
     class Meta:
         model = OutShipment
@@ -24,5 +24,4 @@ class OutShipmentFilter(django_filters.FilterSet):
     def filter_queryset(self, queryset):
         """Override to add distinct() for ManyToMany relationships"""
         queryset = super().filter_queryset(queryset)
-        return queryset.distinct()
-
+        return queryset
