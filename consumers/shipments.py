@@ -3,18 +3,16 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 class ShipmentsConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        self.groups = {"shipments"}
-        for group in self.groups:
-            await self.channel_layer.group_add(group, self.channel_name)
+        await self.channel_layer.group_add("shipments", self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
-        for group in getattr(self, "groups", []):
-            await self.channel_layer.group_discard(group, self.channel_name)
+        await self.channel_layer.group_discard("shipments", self.channel_name)
 
     async def shipments_event(self, event):
         await self.send_json({
             "model": event.get("model"),
             "action": event.get("action"),
             "id": event.get("id"),
+            "message": event.get("message"),
         })

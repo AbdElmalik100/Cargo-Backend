@@ -4,11 +4,6 @@ from rest_framework.response import Response
 from django.db.models import Sum, Count, Max
 from datetime import datetime
 
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-
 from .models import Destination, Company, InShipment, OutShipment
 from .serializers import (
     DestinationSerializer,
@@ -98,17 +93,8 @@ class InShipmentViewSet(viewsets.ModelViewSet):
 
         return Response(stats)
     
-    def perform_create(self, serializer):
-        serializer.save()
-        notify_stats_update()
-    
-    def perform_update(self, serializer):
-        serializer.save()
-        notify_stats_update()
-    
     def perform_destroy(self, instance):
         instance.delete()
-        notify_stats_update()
 
 
 class OutShipmentViewSet(viewsets.ModelViewSet):
@@ -146,51 +132,8 @@ class OutShipmentViewSet(viewsets.ModelViewSet):
 
         return Response(stats)
 
-    def perform_create(self, serializer):
-        serializer.save()
-        notify_stats_update()
-
-    def perform_update(self, serializer):
-        serializer.save()
-        notify_stats_update()
-
     def perform_destroy(self, instance):
-        # Get all linked inshipments before deletion
         in_shipment_ids = list(instance.in_shipments.values_list('id', flat=True))
         instance.delete()
-        # Unmark all inshipments as exported
         InShipment.objects.filter(id__in=in_shipment_ids).update(export=False)
-        notify_stats_update()
-
-
-def notify_stats_update():
-    """Push a signal to websocket listeners when shipment data changes"""
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        "shipments_stats",
-        {
-            "type": "stats.update",
-            "message": "update stats"
-        }
-    )
-
-
-@receiver(post_save, sender=InShipment)
-def in_shipment_saved(sender, instance, created, **kwargs):
-    notify_stats_update()
-
-
-@receiver(post_delete, sender=InShipment)
-def in_shipment_removed(sender, instance, **kwargs):
-    notify_stats_update()
-
-
-@receiver(post_save, sender=OutShipment)
-def out_shipment_saved(sender, instance, created, **kwargs):
-    notify_stats_update()
-
-
-@receiver(post_delete, sender=OutShipment)
-def out_shipment_removed(sender, instance, **kwargs):
-    notify_stats_update()
 
