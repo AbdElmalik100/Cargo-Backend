@@ -16,6 +16,7 @@ from .serializers import (
     InShipmentSerializer,
     OutShipmentSerializer,
 )
+from .filters import InShipmentFilter, OutShipmentFilter
 
 
 class DestinationViewSet(viewsets.ModelViewSet):
@@ -66,24 +67,10 @@ class InShipmentViewSet(viewsets.ModelViewSet):
     """ViewSet for InShipment model (Inbound Shipments)"""
     queryset = InShipment.objects.all()
     serializer_class = InShipmentSerializer
+    filterset_class = InShipmentFilter
 
     search_fields = ["company_name", "sub_bill_number", "bill_number", "destination", "contract_status"]
     ordering_fields = ["disbursement_date", "arrival_date", "payment_fees"]
-    
-    def get_queryset(self):
-        """Override to support bill_number filtering"""
-        queryset = super().get_queryset()
-        bill_number = self.request.query_params.get('bill_number', None)
-        export_value = self.request.query_params.get('export', None)
-        if bill_number:
-            queryset = queryset.filter(bill_number=bill_number)
-        if export_value is not None:
-            export_value = export_value.lower()
-            if export_value in ['true', '1', 'yes']:
-                queryset = queryset.filter(export=True)
-            elif export_value in ['false', '0', 'no']:
-                queryset = queryset.filter(export=False)
-        return queryset
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -126,18 +113,38 @@ class InShipmentViewSet(viewsets.ModelViewSet):
 
 class OutShipmentViewSet(viewsets.ModelViewSet):
     """ViewSet for OutShipment model (Outbound Shipments)"""
-    queryset = OutShipment.objects.select_related('in_shipment').all()
+    queryset = OutShipment.objects.prefetch_related('in_shipments').all()
     serializer_class = OutShipmentSerializer
+    filterset_class = OutShipmentFilter
 
-    search_fields = ["company_name", "sub_bill_number", "bill_number", "destination", "contract_status", "in_shipment__bill_number"]
+    search_fields = ["company_name", "sub_bill_number", "bill_number", "destination", "contract_status", "in_shipments__bill_number"]
     ordering_fields = ["export_date", "disbursement_date", "arrival_date", "payment_fees"]
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        bill_number = self.request.query_params.get('bill_number', None)
-        if bill_number:
-            queryset = queryset.filter(in_shipment__bill_number=bill_number)
-        return queryset
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        stats = OutShipment.objects.aggregate(
+            total_shipments=Count('id'),
+            total_weight=Sum('weight'),
+            total_payment_fees=Sum('payment_fees'),
+            total_ground_fees=Sum('ground_fees'),
+            last_updated=Max('updated_at'),
+        )
+        
+        stats['total_shipments'] = stats['total_shipments'] or 0
+        stats['total_weight'] = stats['total_weight'] or 0
+        stats['total_payment_fees'] = stats['total_payment_fees'] or 0
+        stats['total_ground_fees'] = stats['total_ground_fees'] or 0
+        stats['last_updated'] = stats['last_updated'] or datetime.now()
+
+        for key, value in stats.items():
+            if key == 'total_shipments':
+                continue
+            elif key == 'last_updated':
+                stats[key] = value.isoformat() if value else None
+            else:   
+                stats[key] = float(value or 0)
+
+        return Response(stats)
 
     def perform_create(self, serializer):
         serializer.save()
@@ -148,10 +155,11 @@ class OutShipmentViewSet(viewsets.ModelViewSet):
         notify_stats_update()
 
     def perform_destroy(self, instance):
-        in_shipment = instance.in_shipment
+        # Get all linked inshipments before deletion
+        in_shipment_ids = list(instance.in_shipments.values_list('id', flat=True))
         instance.delete()
-        in_shipment.export = False
-        in_shipment.save(update_fields=['export', 'updated_at'])
+        # Unmark all inshipments as exported
+        InShipment.objects.filter(id__in=in_shipment_ids).update(export=False)
         notify_stats_update()
 
 

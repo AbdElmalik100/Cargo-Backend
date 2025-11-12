@@ -15,6 +15,7 @@ django-cors-headers==4.9.0
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 djoser==2.3.3
+django-filter==24.3
 hyperlink==21.0.0
 idna==3.11
 incremental==24.7.2

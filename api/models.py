@@ -38,7 +38,7 @@ class BaseShipment(models.Model):
     """Base model with common fields for InShipment and OutShipment"""
     bill_number = models.CharField(max_length=100, help_text="رقم البوليصة")
     arrival_date = models.DateField(help_text="تاريخ الوصول")
-    sub_bill_number = models.CharField(max_length=100, help_text="رقم البوليصة الفرعية")
+    sub_bill_number = models.CharField(unique=True, max_length=100, help_text="رقم البوليصة الفرعية")
     company_name = models.CharField(max_length=255, help_text="اسم الشركة")
     package_count = models.PositiveIntegerField(help_text="عدد الطرود")
     weight = models.DecimalField(max_digits=10, decimal_places=2, help_text="الوزن")
@@ -73,12 +73,11 @@ class InShipment(BaseShipment):
 
 
 class OutShipment(BaseShipment):
-    """Model for Outbound Shipments linked to an inbound shipment"""
-    in_shipment = models.OneToOneField(
+    """Model for Outbound Shipments linked to multiple inbound shipments"""
+    in_shipments = models.ManyToManyField(
         InShipment,
-        related_name='out_shipment',
-        on_delete=models.CASCADE,
-        help_text="Inbound shipment associated with this outbound record"
+        related_name='out_shipments',
+        help_text="Inbound shipments associated with this outbound record"
     )
     export_date = models.DateField(blank=True, null=True, help_text="تاريخ التصدير")
 
