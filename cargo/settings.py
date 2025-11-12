@@ -109,6 +109,20 @@ DATABASES = {
 #     }
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'mssql',
+#         'NAME': 'YourDatabaseName',
+#         'HOST': 'DESKTOP-ABDEL\\SQLEXPRESS',
+#         'PORT': '',
+#         'OPTIONS': {
+#             'driver': 'ODBC Driver 18 for SQL Server',
+#             'trusted_connection': 'yes',
+#             'extra_params': 'TrustServerCertificate=yes;Encrypt=no;',
+#         },
+#     }
+# }
+
 # REST Framework config
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
